@@ -1,0 +1,12 @@
+services:
+  app:
+    image: alpine:latest
+    command: cat /run/secrets/db-password
+    secrets:
+      - db-password
+
+secrets:
+  db-password:
+    x-secompose-gcp:
+      key: OpenAPI
+    environment: DB_PASSWORD
