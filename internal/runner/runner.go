@@ -1,12 +1,11 @@
 package runner
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
+	"maps"
 	"os"
-	"os/exec"
+	"slices"
 
 	"github.com/sylphe88/secompose/internal/compose"
 )
@@ -32,32 +31,41 @@ func Run(args []string) int {
 		return 1
 	}
 
-	secrets, err := compose.parseSecrets(parsed.ComposeFile)
+	secrets, err := compose.ParseSecrets(parsed.ComposeFile)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "secompose: reading %q: %v\n", parsed.ComposeFile, err)
 		return 1
 	}
 
-	hydrated, err := compose.Hydrate(ctx, secrets)
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "secret-compose: %v\n", err)
-		return 1
+	secret_names := slices.Collect(maps.Keys(secrets))
+	fmt.Println("Found secrets:", secret_names)
+
+	secrets.ResolveAll(ctx)
+
+	for name, s := range secrets {
+		fmt.Printf("Secret %q -> %q", name, s.Value)
 	}
 
-	cmdArgs := append([]string{"compose"}, parsed.RewrittenArgs...)
-	cmd := exec.Command("docker", cmdArgs...)
-	cmd.Stdin = bytes.NewReader(hydrated)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// hydrated, err := compose.Hydrate(ctx, secrets)
+	// if err != nil {
+	// 	_, _ = fmt.Fprintf(os.Stderr, "secret-compose: %v\n", err)
+	// 	return 1
+	// }
 
-	if err := cmd.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return exitErr.ExitCode()
-		}
-		_, _ = fmt.Fprintf(os.Stderr, "secret-compose: %v\n", err)
-		return 1
-	}
+	// cmdArgs := append([]string{"compose"}, parsed.RewrittenArgs...)
+	// cmd := exec.Command("docker", cmdArgs...)
+	// cmd.Stdin = bytes.NewReader(hydrated)
+	// cmd.Stdout = os.Stdout
+	// cmd.Stderr = os.Stderr
+
+	// if err := cmd.Run(); err != nil {
+	// 	var exitErr *exec.ExitError
+	// 	if errors.As(err, &exitErr) {
+	// 		return exitErr.ExitCode()
+	// 	}
+	// 	_, _ = fmt.Fprintf(os.Stderr, "secret-compose: %v\n", err)
+	// 	return 1
+	// }
 
 	return 0
 }

@@ -33,3 +33,5 @@ build/
 # Editor/IDE
 # .idea/
 # .vscode/
+
+*.local

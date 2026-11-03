@@ -8,40 +8,22 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/sylphe88/secompose/internal/backend"
 )
 
-type Ref struct {
-	Key string `yaml:"key"`
-}
-
-func (r *Ref) ref() *Ref { return r }
-
-type Provider interface {
-	ref() *Ref
-	Resolve(ctx context.Context) (string, error)
-}
-
 // Provide a registry to register providers in main
-var providers = map[string]func() Provider{}
+var providers = map[string]func() backend.Provider{}
 
-func Register(name string, f func() Provider) { providers[name] = f }
+func Register(name string, f func() backend.Provider) { providers[name] = f }
 
 // Native keys `file` and `environment`, and custom/dynamic provider
 type Secret struct {
-	File         string   `yaml:"file"`
-	Environment  string   `yaml:"environment"`
-	ProviderName string   `yaml:"-"`
-	Provider     Provider `yaml:"-"`
-	Value        string   `yaml:"-"`
-}
-
-func (s *Secret) Load(ctx context.Context) error {
-	v, err := s.Provider.Resolve(ctx)
-	if err == nil {
-		s.Value = v
-		return nil
-	}
-	return fmt.Errorf("%s: %w", s.ProviderName, err)
+	File         string           `yaml:"file"`
+	Environment  string           `yaml:"environment"`
+	ProviderName string           `yaml:"-"`
+	Provider     backend.Provider `yaml:"-"`
+	Value        string           `yaml:"-"`
 }
 
 func (s *Secret) UnmarshalYAML(n *yaml.Node) error {
@@ -61,16 +43,10 @@ func (s *Secret) UnmarshalYAML(n *yaml.Node) error {
 		if s.Provider != nil {
 			return fmt.Errorf("multiple providers: %s, %s", s.ProviderName, name)
 		}
-		newProvider, ok := providers[name]
-		if !ok {
-			return fmt.Errorf("unknown provider %q", name)
-		}
-		p := newProvider()
-		if err := n.Content[i+1].Decode(p); err != nil {
+
+		p, err := backend.Decode(name, n.Content[i+1])
+		if err != nil {
 			return fmt.Errorf("x-secompose-%s: %w", name, err)
-		}
-		if r := p.ref(); r.Key == "" {
-			return fmt.Errorf("x-secompose-%s: key is required", name)
 		}
 		s.ProviderName, s.Provider = name, p
 	}
@@ -81,6 +57,28 @@ func (s *Secret) UnmarshalYAML(n *yaml.Node) error {
 		return errors.New("file and environment are mutually exclusive")
 	}
 	return nil
+}
+
+func (s *Secret) Resolve(ctx context.Context) error {
+	v, err := s.Provider.Load(ctx)
+	if err == nil {
+		s.Value = v
+		return nil
+	}
+	fmt.Println("Error while resolving secret, failing over...")
+	switch {
+	case s.Environment != "":
+		if v, ok := os.LookupEnv(s.Environment); ok {
+			s.Value = v
+			return nil
+		}
+	case s.File != "":
+		if b, ferr := os.ReadFile(s.File); ferr == nil {
+			s.Value = strings.TrimRight(string(b), "\n")
+			return nil
+		}
+	}
+	return fmt.Errorf("%s: %w", s.ProviderName, err)
 }
 
 type Secrets map[string]*Secret
@@ -105,7 +103,7 @@ type Compose struct {
 	Secrets Secrets `yaml:"secrets"`
 }
 
-func parseSecrets(path string) (Secrets, error) {
+func ParseSecrets(path string) (Secrets, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -115,4 +113,13 @@ func parseSecrets(path string) (Secrets, error) {
 		return nil, err
 	}
 	return c.Secrets, nil
+}
+
+func (ss Secrets) ResolveAll(ctx context.Context) error {
+	for name, s := range ss {
+		if err := s.Resolve(ctx); err != nil {
+			return fmt.Errorf("secret %q didn't resolve: %w", name, err)
+		}
+	}
+	return nil
 }

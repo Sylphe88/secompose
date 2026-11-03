@@ -8,5 +8,6 @@ services:
 secrets:
   db-password:
     x-secompose-gcp:
-      key: OpenAPI
+      key: MYSQL_PASSWORD
+      namespace: some-ai-project
     environment: DB_PASSWORD

@@ -1,12 +1,41 @@
-// Package backend defines the interface for secret storage backends and
-// provides a registry of available implementations.
 package backend
 
-import "context"
+import (
+	"context"
+	"errors"
+	"fmt"
 
-// Backend is the interface that all secret storage backends must implement.
-// version=0 means "latest" — backends should retrieve the most recent version
-// of the secret when version is 0.
-type Backend interface {
-	Lookup(ctx context.Context, path, key string, version int) (string, error)
+	"gopkg.in/yaml.v3"
+)
+
+type Ref struct {
+	Path    string `yaml:"path"`
+	Key     string `yaml:"key"`
+	Version string `yaml:"version"`
+}
+
+func (r *Ref) ref() *Ref { return r }
+
+type Provider interface {
+	ref() *Ref
+	Load(ctx context.Context) (string, error)
+}
+
+var registry = map[string]func() Provider{}
+
+func Register(name string, f func() Provider) { registry[name] = f }
+
+func Decode(name string, n *yaml.Node) (Provider, error) {
+	newProvider, ok := registry[name]
+	if !ok {
+		return nil, fmt.Errorf("unknown provider %q", name)
+	}
+	p := newProvider()
+	if err := n.Decode(p); err != nil {
+		return nil, err
+	}
+	if r := p.ref(); r.Key == "" {
+		return nil, errors.New("path and key are required")
+	}
+	return p, nil
 }
