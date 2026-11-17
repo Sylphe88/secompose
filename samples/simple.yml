@@ -10,4 +10,4 @@ secrets:
     x-secompose-gcp:
       key: MYSQL_PASSWORD
       namespace: some-ai-project
-    environment: DB_PASSWORD
+    environment: MYSQL_PASSWORD

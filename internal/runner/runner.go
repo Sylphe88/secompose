@@ -1,14 +1,36 @@
 package runner
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"maps"
 	"os"
-	"slices"
+	"os/exec"
 
 	"github.com/sylphe88/secompose/internal/compose"
 )
+
+func launchCompose(ctx context.Context, doc []byte, secrets compose.Secrets, args ...string) int {
+
+	cmd := exec.CommandContext(ctx, "docker", append([]string{"compose"}, args...)...)
+	cmd.Stdin = bytes.NewReader(doc)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.Env = os.Environ()
+	for name, s := range secrets {
+		cmd.Env = append(cmd.Env, compose.ToEnvKeyValue(name, s))
+	}
+
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return exitErr.ExitCode()
+		}
+		_, _ = fmt.Fprintf(os.Stderr, "secret-compose: %v\n", err)
+		return 1
+	}
+	return 0
+}
 
 // Run executes `docker compose` with the provided arguments.
 //
@@ -31,41 +53,29 @@ func Run(args []string) int {
 		return 1
 	}
 
-	secrets, err := compose.ParseSecrets(parsed.ComposeFile)
+	data, err := os.ReadFile(parsed.ComposeFile)
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "secompose: reading %q: %v\n", parsed.ComposeFile, err)
 		return 1
 	}
 
-	secret_names := slices.Collect(maps.Keys(secrets))
-	fmt.Println("Found secrets:", secret_names)
-
-	secrets.ResolveAll(ctx)
-
-	for name, s := range secrets {
-		fmt.Printf("Secret %q -> %q", name, s.Value)
+	secrets, err := compose.ParseSecrets(data)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "secompose: reading %q: %v\n", parsed.ComposeFile, err)
+		return 1
 	}
 
-	// hydrated, err := compose.Hydrate(ctx, secrets)
-	// if err != nil {
-	// 	_, _ = fmt.Fprintf(os.Stderr, "secret-compose: %v\n", err)
-	// 	return 1
+	// secret_names := slices.Collect(maps.Keys(secrets))
+	// fmt.Println("secompose: Found secrets:", secret_names)
+
+	if err := secrets.ResolveAll(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "secompose: failed resolution: %v\n", err)
+		return 1
+	}
+
+	// for name, s := range secrets {
+	// 	fmt.Printf("Secret %q -> %q", name, s.Value)
 	// }
 
-	// cmdArgs := append([]string{"compose"}, parsed.RewrittenArgs...)
-	// cmd := exec.Command("docker", cmdArgs...)
-	// cmd.Stdin = bytes.NewReader(hydrated)
-	// cmd.Stdout = os.Stdout
-	// cmd.Stderr = os.Stderr
+	return launchCompose(ctx, data, secrets, parsed.RewrittenArgs...)
 
-	// if err := cmd.Run(); err != nil {
-	// 	var exitErr *exec.ExitError
-	// 	if errors.As(err, &exitErr) {
-	// 		return exitErr.ExitCode()
-	// 	}
-	// 	_, _ = fmt.Fprintf(os.Stderr, "secret-compose: %v\n", err)
-	// 	return 1
-	// }
-
-	return 0
 }

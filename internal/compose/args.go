@@ -41,14 +41,14 @@ func ParseArgs(args []string) (*ParseResult, error) {
 			rewritten = append(rewritten, args[i])
 			continue
 		}
-		// Consume the token(s) that formed this flag.
+		// Consume the token(s) that formed this flag
 		i += flag.consumed - 1
 		if result.ComposeFile == "" {
-			// First -f: replace with stdin marker.
+			// First -f: replace with stdin marker
 			result.ComposeFile = val
 			rewritten = append(rewritten, "-f", "-")
 		} else {
-			// Subsequent -f: keep verbatim.
+			// Subsequent -f: keep as-is
 			rewritten = append(rewritten, flag.raw...)
 		}
 	}

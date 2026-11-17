@@ -10,7 +10,7 @@
         "request": "launch",
         "mode": "debug",
         "program": "cmd/secompose/main.go",
-        "args": ["-f", "samples/simple.yml"],
+        "args": ["-f", "samples/simple.yml", "up"],
         "cwd": "${workspaceFolder}",
         "env": {
         }

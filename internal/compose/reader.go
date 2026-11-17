@@ -52,36 +52,43 @@ func (s *Secret) UnmarshalYAML(n *yaml.Node) error {
 	}
 	switch {
 	case s.Provider == nil:
-		return errors.New("an x-secompose-* provider is required")
+		return errors.New("A x-secompose-* provider is required")
+	case s.Environment == "":
+		return errors.New("`environment` must also be set to hydrate in-memory compose after secret resolution")
 	case s.File != "" && s.Environment != "":
 		return errors.New("file and environment are mutually exclusive")
 	}
 	return nil
 }
 
-func (s *Secret) Resolve(ctx context.Context) error {
+func (s *Secret) Resolve(ctx context.Context) {
 	v, err := s.Provider.Load(ctx)
 	if err == nil {
 		s.Value = v
-		return nil
+	} else {
+		fmt.Println("secompose: secret provider failed to resolve. Failing over to env.")
+		fmt.Printf("secompose: provider details - %s: %v\n", s.ProviderName, err)
 	}
-	fmt.Println("Error while resolving secret, failing over...")
-	switch {
-	case s.Environment != "":
-		if v, ok := os.LookupEnv(s.Environment); ok {
-			s.Value = v
-			return nil
-		}
-	case s.File != "":
-		if b, ferr := os.ReadFile(s.File); ferr == nil {
-			s.Value = strings.TrimRight(string(b), "\n")
-			return nil
-		}
+
+	if v, found := os.LookupEnv(s.Environment); found {
+		s.Value = v
+	} else {
+		s.Value = ""
 	}
-	return fmt.Errorf("%s: %w", s.ProviderName, err)
 }
 
 type Secrets map[string]*Secret
+
+func envName(name string, s *Secret) string {
+	if s.Environment != "" {
+		return s.Environment
+	}
+	return strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+}
+
+func ToEnvKeyValue(name string, s *Secret) string {
+	return envName(name, s) + "=" + s.Value
+}
 
 func (ss *Secrets) UnmarshalYAML(n *yaml.Node) error {
 	if n.Kind != yaml.MappingNode {
@@ -103,13 +110,10 @@ type Compose struct {
 	Secrets Secrets `yaml:"secrets"`
 }
 
-func ParseSecrets(path string) (Secrets, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
+func ParseSecrets(composeData []byte) (Secrets, error) {
+
 	var c Compose
-	if err := yaml.Unmarshal(data, &c); err != nil {
+	if err := yaml.Unmarshal(composeData, &c); err != nil {
 		return nil, err
 	}
 	return c.Secrets, nil
@@ -117,8 +121,9 @@ func ParseSecrets(path string) (Secrets, error) {
 
 func (ss Secrets) ResolveAll(ctx context.Context) error {
 	for name, s := range ss {
-		if err := s.Resolve(ctx); err != nil {
-			return fmt.Errorf("secret %q didn't resolve: %w", name, err)
+		s.Resolve(ctx)
+		if s.Value == "" {
+			return fmt.Errorf("secret %q resolved to an empty value", name)
 		}
 	}
 	return nil
