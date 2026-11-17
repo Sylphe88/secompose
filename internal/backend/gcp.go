@@ -33,7 +33,7 @@ func (g *Gcp) project(ctx context.Context) (string, error) {
 	return creds.ProjectID, nil
 }
 
-func (g *Gcp) Load(ctx context.Context) (string, error) {
+func (g *Gcp) Load(ctx context.Context) (_ string, err error) {
 	project, err := g.project(ctx)
 	if err != nil {
 		return "", err
@@ -43,7 +43,9 @@ func (g *Gcp) Load(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer c.Close()
+	defer func() {
+		err = errors.Join(err, c.Close())
+	}()
 
 	res, err := c.AccessSecretVersion(ctx, &secretmanagerpb.AccessSecretVersionRequest{
 		Name: fmt.Sprintf("projects/%s/secrets/%s/versions/%s", project, g.Key, g.Version),

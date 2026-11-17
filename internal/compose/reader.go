@@ -52,7 +52,7 @@ func (s *Secret) UnmarshalYAML(n *yaml.Node) error {
 	}
 	switch {
 	case s.Provider == nil:
-		return errors.New("A x-secompose-* provider is required")
+		return errors.New("a x-secompose-* provider is required")
 	case s.Environment == "":
 		return errors.New("`environment` must also be set to hydrate in-memory compose after secret resolution")
 	case s.File != "" && s.Environment != "":
