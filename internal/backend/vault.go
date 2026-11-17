@@ -10,7 +10,7 @@ import (
 
 type Vault struct {
 	Ref   `yaml:",inline"`
-	Mount string `yaml:"mount"`
+	Mount string `yaml:"namespace"`
 }
 
 func (v *Vault) Load(ctx context.Context) (string, error) {

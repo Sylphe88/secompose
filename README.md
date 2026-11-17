@@ -1,17 +1,17 @@
 # secompose
-Docker Compose alias with the ability to inject secrets from external backends
+Docker Compose wrapper with the ability to inject secrets from external backends
 
 # Usage
 
-Use secompose or se-compose like your normal docker compose or docker-compose CLI command:
+Use secompose (or se-compose) like your normal docker compose or docker-compose CLI command:
 
 ```bash
 secompose -f mysecompose.yml up -d
 ```
 
-secompose parses the compose file, reads secompose-backed secrets and rebuilds an in-memory/stdin compose file to be transparently handed over to `docker compose`
+secompose parses the compose file, reads secompose-backed secrets and runs the compose file as-is with secret values injected as environment variables attached to the command.
 
-# secompose file reference  
+# secompose file reference
 ## secompose extension keys
 
 The only difference with a classic compose.yml lies in its extension of the `secrets` root keyword, where possible choices (on top of native `file` and `environment`) now include new `x-secompose-<provider_name>` keys.
@@ -24,32 +24,47 @@ secrets:
     x-secompose-vault: 
       path: myengine/infra/dev/gitlab
       key: global_pypi_reader
+      version: 3
     environment: GITLAB_PYPI_TOKEN
 ```
 
-The `x-secompose-*` key is parsed **first** by secompose (in this example, if it fails to read the secret from Vault, it fails over to the `environment` value)
+When it exists, the `x-secompose-*` key is parsed **first** by secompose. If it fails to read the secret from the provider (here, Vault), it fails over to the `environment` value
 
-> `docker compose` will still parse this compose file correctly, however it will simply ignore the secompose key and use the `file` or `environment` associated with the secret.
+> The above compose file is valid for `docker compose`: it will still simply ignore the x-secompose-* keys and proceed with reading the secret from the `environment` source.
 
-> While it is recommended to set a failover source, you may choose to skip the `environment` or `file` key if you are sure you and your coworkers use secompose and not just `docker compose`.
+> The `environment` source is mandatory: secompose must be able to fail over it, and secompose assigns the secret value to the env variable name set as `environment`. The `file` source is not supported by secompose.
 
 ## Providers
-The `x-secompose-*` suffix depends on your secret provider:
+The `x-secompose-*` suffix depends on your secret provider, for instance:
 - Hashicorp Vault: `vault`
 - AWS Secret Manager: `aws`
 - Azure Key Vault: `azure`
+- GCP Secret Manager: `gcp`
 
-Depending on the targetted provider, you will need `path`, or `key`, or both, to be able to read the secrets. Additional/optional provider-specific keys may be used too, please refer to the provider section.
+For all the providers, the following base fields are available:
+- `key`: Either the name of the secret, or the key of the secret (when a secret is a dict like in Vault).
+- `path` (optional): The path to access the secret, when the provider lays out a hierarchy (Vault, Infisical...)
+- `version` (optional): The version of the secret to fetch, when the provider allows for it. Defaults to "latest".
 
 ### Vault
 Key: `x-secompose-vault`
 
-Reads secrets from a kv (key-value) engine in Hashicorp Vault. 
+Reads a secret from a kv (key-value) engine in Hashicorp Vault. 
 Access to the Vault server should be granted by environment variables where `secompose` runs: VAULT_TOKEN, VAULT_ADDR, and any other optional env var described by the Vault documentation (e.g. VAULT_CACERT for private/custom CA...)
 
-The provider expects `path` and `key` keys for each secret:
-- `path`: Slash-separated path to access the secret. The first fragment is the mount/engine where the secret is located, e.g. `infra-kv/platform/domains/example_com/certificates` would refer to the secret named "certificates" found in the *infra-kv* kv engine, at the *platform/domains/example_com* path.
-- `key`: Name of the key in the secret which value will be read
+Additional fields:
+- `namespace` (optional): Name of the mounted secret engine where the secret is stored. Defaults to "kv" if not set.
+
+
+### GCP Secret Manager
+Key: `x-secompose-gcp`
+
+Reads a secret from the Secret Manager of the GCP project.
+Access to the secret must be granted through your gcloud CLI, as `secompose` reads your default credentials.
+
+Additional fields:
+- `namespace` (optional): GCP project where the secret is hosted. When not set, `secompose` tries to find a default GCP project through (by priority order): from the `GOOGLE_CLOUD_PROJECT` environment variable, from the default project attached to your GCP/gcloud credentials.
+
 
 
 
