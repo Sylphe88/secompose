@@ -27,6 +27,14 @@ go.work.sum
 # env file
 .env
 
+# Build output
+build/
+
 # Editor/IDE
 # .idea/
 # .vscode/
+
+*.local
+
+# Kilocode plans
+.kilo/

@@ -1,0 +1,13 @@
+services:
+  app:
+    image: alpine:latest
+    command: cat /run/secrets/db-password
+    secrets:
+      - db-password
+
+secrets:
+  db-password:
+    x-secompose-gcp:
+      key: MYSQL_PASSWORD
+      namespace: some-ai-project
+    environment: MYSQL_PASSWORD
